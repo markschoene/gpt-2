@@ -12,6 +12,8 @@ def interact_model(
     model_name='124M',
     seed=None,
     batch_size=1,
+    length=None,
+    temperature=1,
     top_k=0,
     top_p=1,
     models_dir='models',
@@ -45,14 +47,21 @@ def interact_model(
     with open(os.path.join(models_dir, model_name, 'hparams.json')) as f:
         hparams.override_from_dict(json.load(f))
 
+    if length is None:
+        length = hparams.n_ctx // 2
+    elif length > hparams.n_ctx:
+        raise ValueError("Can't get samples longer than window size: %s" % hparams.n_ctx)
+
     with tf.Session(graph=tf.Graph()) as sess:
         context = tf.placeholder(tf.int32, [batch_size, None])
         np.random.seed(seed)
         tf.set_random_seed(seed)
-        output = sample.next_sample(
+        output = sample.sample_sequence_likelihoods(
             hparams=hparams,
             context=context,
             batch_size=batch_size,
+            temperature=temperature,
+            length=length,
             top_k=top_k, top_p=top_p
         )
 
@@ -60,38 +69,39 @@ def interact_model(
         ckpt = tf.train.latest_checkpoint(os.path.join(models_dir, model_name))
         saver.restore(sess, ckpt)
 
-
-        #raw_text = input("Model prompt >>> ")
-        raw_text = "Give me some "
+        raw_text = "Incorporating language models into optical character recognition is"
         while not raw_text:
             print('Prompt should not be empty!')
             raw_text = input("Model prompt >>> ")
         context_tokens = enc.encode(raw_text)
         generated = 0
-
+        print(raw_text)
         out = sess.run(output, feed_dict={
             context: [context_tokens for _ in range(batch_size)]
-        })[:, len(context_tokens):]
+        })
+        tokens = out[0][:, len(context_tokens):]
+        logits = out[1][:, 1:]
+
         # extract most likely words
-        print(out.shape)
-        ind = np.argsort(-out)
-        sorted = out[:, ind]
-        print(sorted[:, :10])
-        print(ind[:, :10])
 
         for i in range(batch_size):
             generated += 1
             print("=" * 40 + " SAMPLE " + str(generated) + " " + "=" * 40)
-
-            print("argmax", enc.decode([out.argmax()]))
-
-            words = enc.decode(ind[i, :10])
-            probabilities = sorted[i, :10]#np.exp(sorted[i, :10])
-            #probabilities = probabilities / probabilities.sum()
+            words = enc.decode(tokens[i])
             print(words)
-            print("probabilities sum to ", probabilities.sum())
-            for j in range(10):
-                print(words[j], probabilities[i, j])
+
+            # print word probabilities
+            for j in range(length):
+                print("-" * 100)
+                p = np.exp(logits[i, j]) / np.exp(logits[i, j]).sum()
+                top_words = 5
+                ind = np.argsort(-p)[:top_words]
+                top_p = p[ind]
+                top_words = [enc.decode([i]) for i in ind]
+                most_likely_words = dict(zip(top_words, top_p))
+                print(enc.decode([tokens[i, j]]), most_likely_words)
+
+
         print("=" * 80)
 
 if __name__ == '__main__':
