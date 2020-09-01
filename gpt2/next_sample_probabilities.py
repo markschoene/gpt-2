@@ -69,7 +69,7 @@ def interact_model(
         ckpt = tf.train.latest_checkpoint(os.path.join(models_dir, model_name))
         saver.restore(sess, ckpt)
 
-        raw_text = "Incorporating language models into optical character recognition is"
+        raw_text = "Hey, I just met you"
         while not raw_text:
             print('Prompt should not be empty!')
             raw_text = input("Model prompt >>> ")
@@ -90,17 +90,17 @@ def interact_model(
             words = enc.decode(tokens[i])
             print(words)
 
+            masses = np.zeros(length)
             # print word probabilities
             for j in range(length):
                 print("-" * 100)
-                p = np.exp(logits[i, j]) / np.exp(logits[i, j]).sum()
-                top_words = 5
+                p = np.exp(logits[i, j], dtype=np.float64) / np.exp(logits[i, j], dtype=np.float64).sum()
+                top_words = 10
                 ind = np.argsort(-p)[:top_words]
                 top_p = p[ind]
                 top_words = [enc.decode([i]) for i in ind]
                 most_likely_words = dict(zip(top_words, top_p))
                 print(enc.decode([tokens[i, j]]), most_likely_words)
-
 
         print("=" * 80)
 
